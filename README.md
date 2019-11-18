@@ -13,7 +13,7 @@ PlotBandAndDOS.m：
 MATLAB codes文件夹：
 
 PlotBandAndDOS.m：
-通过读取vasp计算的DOSCAR、EIGENVAL、KPOINTS、INCAR文件的信息，绘制态密度(DOS)和能带结构。
-输入文件：能带计算得到的EIGENVAL、KPOINTS、INCAR和态密度计算得到的DOSCAR文件。
-输出结果：DOS图、能带结构图。
-输入输出实例：PlotBandAndDOS_example文件夹中。
+- 通过读取vasp计算的DOSCAR、EIGENVAL、KPOINTS、INCAR文件的信息，绘制态密度(DOS)和能带结构。
+- 输入文件：能带计算得到的EIGENVAL、KPOINTS、INCAR和态密度计算得到的DOSCAR文件。
+- 输出结果：DOS图、能带结构图。
+- 输入输出实例：PlotBandAndDOS_example文件夹中。
