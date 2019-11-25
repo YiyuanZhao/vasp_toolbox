@@ -1,0 +1,86 @@
+!*********************************!   
+!  the system name !
+!*********************************!   
+  SYSTEM = SampleData
+
+!******************************************!   
+   control parameters of the calculations 
+!******************************************!   
+    INIWAV  = 1            ! 1: random numbers for wave functions !
+    ICHARG  = 11            ! 0: initial orbital 1: from file 2: atomic charge
+    ISTART  = 1            ! job : 0-new  1-cont from wavecar(previous calculation)  2-samecut (same basis set)
+    LCHARG  = .TRUE.       ! for charge 
+    LWAVE   = .FALSE.       ! for wave function
+    NPAR    = 4
+    LMAXMIX = 4            ! max onsite mixed and CHGCAR( 4 for d electrons and 6 for f electrons )
+!    NELMDL  = -5            ! Delay for relaxation
+!   ISYM    = 0             ! for symmetry of the system to be calculated( 0-nonsym 1-usesym 2-fastsym ) 
+!   LNONCOLLINEAR = .true.  ! non collinear calculations or collinear calculations !
+   
+!*********************************!   
+   ELECTRONIC RELAXATION !
+!*********************************!   
+   ENCUT  =  400.0 eV     ! the energy cut off for plane wave !
+   PREC   =  Accurate         ! normal or accurate (medium, high low for compatibility)
+   EDIFF  =  1.0E-07      ! stopping-criterion for ELM
+   LREAL  =  .False.         ! real-space projection
+   NELM   =  80          ! the maximum number of steps for SC-loop
+!   NBANDS =  96           ! the band used to calculate ( for diagonalization )
+!   IALGO  =  48           ! algorithm( diagonalization algorithm )
+
+!********************************!
+!  van der Waals correctiong     !    
+!********************************!
+    IVDW=1
+    LUSE_VDW = .TRUE.       ! withch on or off the van der Waals correction !
+!   GGA      = MK           ! the type of exchange correlation !
+!   PARAM1   = 0.1234
+!   PARAM2   = 1.0000
+!   AGGAC    = 0.0000
+     
+!==============================!   
+!   SPIN-ORBITAL calculation ! !  
+!==============================!
+   ISPIN      = 2                    ! swithch on or off the magnetic calculation !
+   MAGMOM     = 5.0 0.6 0.6         ! initial magnetic moment !    
+   LORBIT     = 11                   ! for fatband projection !
+!   LASPH      = .TRUE.               ! aspherical Exc in radial PAW  
+!   GGA_COMPAT = .FALSE.              ! apply spherical cutoff on gradient field   
+
+!============================!   
+!   LSDA + U CALCULATION !   !
+!============================!
+   LDAU      = TRUE
+   LDAUPRINT = 1                ! the print ( 0 | 1 | 2 Controls the verbosity of the L(S)DA+U module )
+   LDAUTYPE  = 1                ! the lad+u type ( 1 for Liechtenstein type and 2 for Dudarev type )
+   LDAUL     =  2    -1         ! Cr  I !
+   LDAUU     = 2.50  0.0        ! the onsite coulumb  interaction for each species !
+   LDAUJ     = 0.25  0.0        ! the onsite exchange interaction for each species !
+
+!*********************************!   
+ Ionic relaxation
+!*********************************!   
+!   EDIFFG  =   -1.0E-02   ! stopping-criterion for IOM
+!   NSW     =    60       ! number of steps for IOM
+!   IBRION  =      2       ! ionic relax: 0-MD 1-quasi-New 2-CG
+!   ISIF    =      3       ! stress and relaxation
+!   ADDGRID = .TRUE.       ! with additional grid for charge density !
+!   NFREE   =      0       ! steps in history (QN), initial steepest desc. (CG)
+!   PSTRESS =    0.0       ! pullay stress
+
+!******************************************!
+ Dipole corrections for slab or surface calculation !
+!******************************************!
+!   LDIPOL =   .TRUE.      ! correct potential (dipole corrections)
+!   IDIPOL =      3        ! 1-x, 2-y, 3-z, 4-all directions
+!   EFIELD =     0.2       ! static electric field 
+   
+    
+   DOS calculation
+! DOS related values:broadening in eV -4-tet -1-fermi 0-gaus 1 or 2 -Mp method
+   ISMEAR =      0          ! relaxation for metal: ISEMAR = 1, for metal IMEAR = 0 or -5. 
+                           ! note: IMEAR=-5 for accurate energy calculation for metal and insulator
+   SIGMA  =   0.05  
+!   NEDOS  =  2000
+
+
