@@ -2,6 +2,7 @@ clear variables;
 %% Read INCAR File
 %Open dialog GUI
 dirname = uigetdir('C:\');
+%dirname = 'D:\tmp';
 if dirname == 0
     f = warndlg('Selection cenceled.','Warning');
     clear variables;
@@ -20,7 +21,7 @@ opts = delimitedTextImportOptions("NumVariables", 2);
 opts.DataLines = [1, Inf];
 opts.Delimiter = "=";
 opts.VariableNames = ["ALGO", "Fast"];
-opts.VariableTypes = ["char", "double"];
+opts.VariableTypes = ["char", "char"];
 opts = setvaropts(opts, 1, "WhitespaceRule", "preserve");
 opts = setvaropts(opts, 1, "EmptyFieldRule", "auto");
 opts.ExtraColumnsRule = "ignore";
@@ -28,21 +29,85 @@ opts.EmptyLineRule = "read";
 opts.ConsecutiveDelimitersRule = "join";
 INCAR = readtable(filename, opts);
 INCAR = table2cell(INCAR);
-numIdx = cellfun(@(x) ~isnan(str2double(x)), INCAR);
-INCAR(numIdx) = cellfun(@(x) {str2double(x)}, INCAR(numIdx));
-
+% Delete empty elements & annotations
+numIdx{1} = cellfun('isempty',INCAR(:, 2)) == 1;
+INCAR(numIdx{1}, :) = [];
+numIdx{2} = ~cellfun ( 'isempty', regexp(INCAR(:,1),"^(!)$") );
+INCAR(numIdx{2}, :) = [];
+numIdx{3} = ~cellfun ( 'isempty', regexp(INCAR(:,1),"note") );
+INCAR(numIdx{3}, :) = [];
+for numIdx = 1: length(INCAR)
+    INCAR{numIdx,2} = regexprep(INCAR{numIdx,2},'(\s)+!.*','');
+end
+INCAR(:, 3) = INCAR(:, 2);
+numIdx = cellfun(@(x) ~isnan(str2double(x)), INCAR(:, 2));
+% Structure of INCAR cell: INCAR(:, 1) = Control tag names, INCAR(:,
+% 2) = Value(double format), INCAR(:, 3) = Value (char format)
+INCAR(numIdx, 2) = cellfun(@(x) {str2double(x)}, INCAR(numIdx, 2));
 % Spin polarized control
-if  ~prod( cellfun('isempty', regexp(INCAR(:,1), "^MAGMOM") ) ) == 1
+if  ~prod( cellfun('isempty', regexp(INCAR(:,1), "(?!\!)^(\s)+MAGMOM") ) ) == 1
     tmp.spinPolarizedFlag = 1;
+elseif  ~prod( cellfun('isempty', regexp(INCAR(:,1), "(?!\!)^(\s)+ISPIN") ) ) == 1
+    numIdx = ~cellfun ( 'isempty', regexp(INCAR(:,1),"ISPIN") );
+    if INCAR{numIdx, 2} == 2
+        tmp.spinPolarizedFlag = 1;
+    else
+        tmp.spinPolarizedFlag = 0;
+    end
 else
     tmp.spinPolarizedFlag = 0;
 end
-clear opts
+% Read LORBIT flag (without annotated)
+if ~prod( cellfun('isempty', regexp(INCAR(:,1), "(?!\!)^(\s)+LORBIT") ) ) == 1
+    numIdx = ~cellfun ( 'isempty', regexp(INCAR(:,1),"LORBIT") );
+    tmp.lorbit = INCAR{numIdx, 2};
+else
+    tmp.lorbit = 0;
+end
+% Read NEDOS flag (without annotated)
+if ~prod( cellfun('isempty', regexp(INCAR(:,1), "(?!\!)^(\s)+NEDOS") ) ) == 1
+    numIdx = ~cellfun ( 'isempty', regexp(INCAR(:,1),"NEDOS") );
+    tmp.nedos = INCAR{numIdx, 2};
+else
+    tmp.nedos = 301;
+end
+clear opts numIdx
+
+%% Read POSCAR File
+filename = [dirname,'\POSCAR'];
+if ~exist(filename,'file')
+    f = errordlg('POSCAR file not found','File Error');
+    set(f,'fontsize',40);
+    clear variables;
+    return
+end
+
+opts = delimitedTextImportOptions("NumVariables", 4);
+opts.DataLines = [1, Inf];
+opts.Delimiter = ["\t", " "];
+opts.VariableNames = ["col1", "col2", "col3", "col4"];
+opts.VariableTypes = ["string", "string", "string", "string"];
+opts = setvaropts(opts, [1, 2, 3, 4], "WhitespaceRule", "preserve");
+opts = setvaropts(opts, [1, 2, 3, 4], "EmptyFieldRule", "auto");
+opts.ExtraColumnsRule = "ignore";
+opts.EmptyLineRule = "read";
+opts.ConsecutiveDelimitersRule = "join";
+POSCARtemp = readtable(filename, opts);
+POSCARtemp = table2array(POSCARtemp);
+POSCARtemp(ismissing(POSCARtemp)) = "";
+for i = 1:length(POSCARtemp)
+    tmp.numIdx = find( strlength(POSCARtemp(i, :)) );
+    POSCAR.stringMat(i, 1: length(tmp.numIdx)) = POSCARtemp(i, tmp.numIdx);
+end
+POSCAR.stringMat(ismissing(POSCAR.stringMat)) = "";
+POSCAR.element.name = POSCAR.stringMat(6, :);
+POSCAR.element.name( POSCAR.element.name=='' )= [];
+POSCAR.element.num = str2double (POSCAR.stringMat(7, :) );
+POSCAR.element.num(isnan(POSCAR.element.num)) = [];
+clear opts i POSCARtemp
 
 %% Read DOSCAR File
 filename = [dirname,'\DOSCAR'];
-startRow = 6;
-formatSpec = '%11s%12s%16s%18s%[^\n\r]';
 fileID = fopen(filename,'r');
 if fileID == -1
     f = errordlg('NOSCAR file not found','File Error');
@@ -50,50 +115,117 @@ if fileID == -1
     clear variables;
     return
 end
-dataArray = textscan(fileID, formatSpec, 'Delimiter', '', 'WhiteSpace', '', 'TextType', 'string', 'HeaderLines' ,startRow-1, 'ReturnOnError', false, 'EndOfLine', '\r\n');
-fclose(fileID);
-% 将非数值文本替换为 NaN。
-raw = repmat({''},length(dataArray{1}),length(dataArray)-1);
-for col=1:length(dataArray)-1
-    raw(1:length(dataArray{col}),col) = mat2cell(dataArray{col}, ones(length(dataArray{col}), 1));
-end
-numericData = NaN(size(dataArray{1},1),size(dataArray,2));
 
-for col=[1,2,3,4]
-    % 将输入元胞数组中的文本转换为数值。已将非数值文本替换为 NaN。
-    rawData = dataArray{col};
-    for row=1:size(rawData, 1)
-        % 创建正则表达式以检测并删除非数值前缀和后缀。
-        regexstr = '(?<prefix>.*?)(?<numbers>([-]*(\d+[\,]*)+[\.]{0,1}\d*[eEdD]{0,1}[-+]*\d*[i]{0,1})|([-]*(\d+[\,]*)*[\.]{1,1}\d+[eEdD]{0,1}[-+]*\d*[i]{0,1}))(?<suffix>.*)';
+switch tmp.spinPolarizedFlag
+    case 0
+        opts = delimitedTextImportOptions("NumVariables", 4);
         try
-            result = regexp(rawData(row), regexstr, 'names');
-            numbers = result.numbers;
-            
-            % 在非千位位置中检测到逗号。
-            invalidThousandsSeparator = false;
-            if numbers.contains(',')
-                thousandsRegExp = '^[-/+]*\d+?(\,\d{3})*\.{0,1}\d*$';
-                if isempty(regexp(numbers, thousandsRegExp, 'once'))
-                    numbers = NaN;
-                    invalidThousandsSeparator = true;
-                end
-            end
-            % 将数值文本转换为数值。
-            if ~invalidThousandsSeparator
-                numbers = textscan(char(strrep(numbers, ',', '')), '%f');
-                numericData(row, col) = numbers{1};
-                raw{row, col} = numbers{1};
-            end
+            opts.DataLines = [6, 6+tmp.nedos];
         catch
-            raw{row, col} = rawData{row};
+            opts.DataLines = [6, 307];
         end
+        opts.Delimiter = " ";
+        opts.VariableNames = ["energy", "DOS", "intDOS", "fermiLevel"];
+        opts.VariableTypes = ["double", "double", "double", "double"];
+        opts.ExtraColumnsRule = "ignore";
+        opts.EmptyLineRule = "read";
+        opts.ConsecutiveDelimitersRule = "join";
+        opts.LeadingDelimitersRule = "ignore";
+        DOSCAR.dos = readtable(filename, opts);
+        clear opts
+    case 1
+        opts = delimitedTextImportOptions("NumVariables", 5);
+        try
+            opts.DataLines = [6, 6+tmp.nedos];
+        catch
+            opts.DataLines = [6, 307];
+        end
+        opts.Delimiter = " ";
+        opts.VariableNames = ["energy", "DOS_Up", "DOS_Down", "intDOS_Up", "intDOS_Down"];
+        opts.VariableTypes = ["double", "double", "double", "double", "double"];
+        opts.ExtraColumnsRule = "ignore";
+        opts.EmptyLineRule = "read";
+        opts.ConsecutiveDelimitersRule = "join";
+        opts.LeadingDelimitersRule = "ignore";
+        DOSCAR.dos = readtable(filename, opts);
+        clear opts
+end
+DOSCAR.fermiLevel = DOSCAR.dos(1, 4);
+DOSCAR.fermiLevel = table2array(DOSCAR.fermiLevel);
+DOSCAR.dos(1, :) = [];
+
+switch tmp.lorbit
+    case 10
+        switch tmp.spinPolarizedFlag
+            case 0
+                opts = delimitedTextImportOptions("NumVariables", 4);
+                opts.DataLines = [tmp.nedos+7, Inf];
+                opts.Delimiter = " ";
+                opts.VariableNames = ["energy", "sDOS", "pDOS", "dDOS"];
+                opts.VariableTypes = ["double", "double", "double", "double"];
+                opts.ExtraColumnsRule = "ignore";
+                opts.EmptyLineRule = "read";
+                opts.ConsecutiveDelimitersRule = "join";
+                opts.LeadingDelimitersRule = "ignore";
+                DOSCAR.projectedDOStemp = readtable(filename, opts);
+                clear opts
+            case 1
+                opts = delimitedTextImportOptions("NumVariables", 7);
+                opts.DataLines = [tmp.nedos+7, Inf];
+                opts.Delimiter = " ";
+                opts.VariableNames = ["energy", "sDOS_Up", "sDOS_Down", "pDOS_Up", "pDOS_Down", "dDOS_Up", "dDOS_Down"];
+                opts.VariableTypes = ["double", "double", "double", "double", "double", "double", "double"];
+                opts = setvaropts(opts, [6, 7], "TrimNonNumeric", true);
+                opts = setvaropts(opts, [6, 7], "ThousandsSeparator", ",");
+                opts.ExtraColumnsRule = "ignore";
+                opts.EmptyLineRule = "read";
+                opts.ConsecutiveDelimitersRule = "join";
+                opts.LeadingDelimitersRule = "ignore";
+                DOSCAR.projectedDOStemp = readtable(filename, opts);
+                clear opts
+        end
+    case 11
+        switch tmp.spinPolarizedFlag
+            case 0
+                opts = delimitedTextImportOptions("NumVariables", 10);
+                opts.DataLines = [tmp.nedos+7, Inf];
+                opts.Delimiter = " ";
+                opts.VariableNames = ["energy", "s_DOS", "py_DOS", "pz_DOS", "px_DOS", "dxy_DOS", "dyz_DOS", "dz2_r2__DOS", "dxz_DOS", "dx2_y2_DOS"];
+                opts.VariableTypes = ["double", "double", "double", "double", "double", "double", "double", "double", "double", "double"];
+                opts = setvaropts(opts, [4, 5, 6, 7, 8, 9, 10], "TrimNonNumeric", true);
+                opts = setvaropts(opts, [4, 5, 6, 7, 8, 9, 10], "ThousandsSeparator", ",");
+                opts.ExtraColumnsRule = "ignore";
+                opts.EmptyLineRule = "read";
+                opts.ConsecutiveDelimitersRule = "join";
+                opts.LeadingDelimitersRule = "ignore";
+                DOSCAR.projectedDOStemp = readtable(filename, opts);
+                clear opts
+            case 1
+                opts = delimitedTextImportOptions("NumVariables", 19);
+                opts.DataLines = [tmp.nedos+7, Inf];
+                opts.Delimiter = " ";
+                opts.VariableNames = ["energy", "s_DOS_Up", "s_DOS_Down", "py_DOS_Up", "py_DOS_Down", "pz_DOS_Up", "pz_DOS_Down", "px_DOS_Up", "px_DOS_Down", "dxy_DOS_Up", "dxy_DOS_Down", "dyz_DOS_Up", "dyz_DOS_Down", "dz2_r2__DOS_Up", "dz2_r2__DOS_Down", "dxz_DOS_Up", "dxz_DOS_Down", "x2_y2_DOS_Up", "x2_y2_DOS_Down"];
+                opts.VariableTypes = ["double", "double", "double", "double", "double", "double", "double", "double", "double", "double", "double", "double", "double", "double", "double", "double", "double", "double", "double"];
+                opts = setvaropts(opts, [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19], "TrimNonNumeric", true);
+                opts = setvaropts(opts, [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19], "ThousandsSeparator", ",");
+                opts.ExtraColumnsRule = "ignore";
+                opts.EmptyLineRule = "read";
+                opts.ConsecutiveDelimitersRule = "join";
+                opts.LeadingDelimitersRule = "ignore";
+                DOSCAR.projectedDOStemp = readtable(filename, opts);
+                clear opts
+        end               
+end
+
+if tmp.lorbit ~= 0
+    for index = 1: height(DOSCAR.projectedDOStemp) / (tmp.nedos + 1)
+    tmp.lowerbound =  (tmp.nedos + 1)*index - 300;
+    tmp.upperbound =  (tmp.nedos + 1)*index;
+    DOSCAR.projectedDOSforEachAtom{index} = DOSCAR.projectedDOStemp(tmp.lowerbound:tmp.upperbound, :);
     end
 end
-R = cellfun(@(x) ~isnumeric(x) && ~islogical(x),raw); % 查找非数值元胞
-raw(R) = {NaN}; % 替换非数值元胞
-DOSCAR = cell2mat(raw);
-clearvars filename startRow formatSpec fileID dataArray ans raw col numericData rawData row regexstr result numbers invalidThousandsSeparator thousandsRegExp R;
 
+clear index
 %% Read EIGENVALUE File
 filename = [dirname,'\EIGENVAL'];
 if ~exist(filename,'file')
@@ -139,7 +271,7 @@ clear opts
 %% Read KPOINTS File
 opts = delimitedTextImportOptions("NumVariables", 4);
 opts.DataLines = [5, Inf];
-opts.Delimiter = [" ", "!"];
+opts.Delimiter = [" ", "!", "\t"];
 opts.VariableNames = ["x", "y", "z", "symmetrydot"];
 opts.VariableTypes = ["double", "double", "double", "categorical"];
 opts = setvaropts(opts, 3, "TrimNonNumeric", true);
@@ -175,9 +307,9 @@ kpoints.pointNumber(1) = kpointsExtra.pointNumber;
 clear opts dirname filename kpointsExtra
 
 %% DOS Plot
-fig1 = figure();
-plot(DOSCAR(2:end,1)-DOSCAR(1,4),DOSCAR(2:end,2));
-set(gca,'XLim',[-8 8]);
+% fig1 = figure();
+% plot(DOSCAR.dos.energy-DOSCAR.fermiLevel,DOSCAR.dos.DOS_Up,DOSCAR.dos.energy-DOSCAR.fermiLevel,-DOSCAR.dos.DOS_Down);
+% set(gca,'XLim',[-8 8]);
 
 %% Band Plot
 tmp.kDistance.length = length(kpoints.x)./2;
@@ -202,9 +334,9 @@ fig2 = figure();
 hold on
 switch tmp.spinPolarizedFlag
     case 0
-        [bandplot, tmp] = plotBandLineWithoutSpin(tmp,EIGENVAL,kpoints,DOSCAR);   
+        [bandplot, tmp] = plotBandLineWithoutSpin(tmp,EIGENVAL,kpoints,DOSCAR.fermiLevel);   
     case 1
-         [bandplot, tmp] = plotBandLineWithSpin(tmp,EIGENVAL,kpoints,DOSCAR);
+         [bandplot, tmp] = plotBandLineWithSpin(tmp,EIGENVAL,kpoints,DOSCAR.fermiLevel);
 end
 
 % Generate high symmetric point line
@@ -218,7 +350,7 @@ hold off
 xticks([0, tmp.criticalPoint]);
 xticklabels(tmp.highSymmetryDotArray);
 axis([0,tmp.criticalPoint(end),tmp.plotLowerBound,tmp.plotUpperBound]);
-clear i j tmp
+% clear i j tmp
 %% Inline Function
 function tmp = getNproperties(tmp,EIGENVAL)
 switch tmp.spinPolarizedFlag
@@ -263,11 +395,11 @@ end
 
 end
 
-function [bandplot, tmp] = plotBandLineWithoutSpin(tmp,EIGENVAL,kpoints,DOSCAR)
+function [bandplot, tmp] = plotBandLineWithoutSpin(tmp,EIGENVAL,kpoints,fermiLevel)
 for i = 1: tmp.nbands
     for j = 1: tmp.nktot
         bandplot.order(j) = calc_order(kpoints.pointNumber(1), tmp.nktot,j, tmp.scalingParameter, tmp.criticalPoint);
-        bandplot.energy{i}(j) = EIGENVAL.energy( (tmp.nbands + 2) * j + i - (tmp.nbands - 1) ) - DOSCAR(1, 4);
+        bandplot.energy{i}(j) = EIGENVAL.energy( (tmp.nbands + 2) * j + i - (tmp.nbands - 1) ) - fermiLevel;
         bandplot.eigenvalue{i}(j) = EIGENVAL.eigenvalue( (tmp.nbands + 2) * j + i - (tmp.nbands - 1) );
         if mod(j, kpoints.pointNumber(1)) == 0 && j ~=  tmp.nktot
             bandplot.energy{i}(j) = NaN;
@@ -284,12 +416,12 @@ end
 
 end
 
-function [bandplot, tmp] = plotBandLineWithSpin(tmp,EIGENVAL,kpoints,DOSCAR)
+function [bandplot, tmp] = plotBandLineWithSpin(tmp,EIGENVAL,kpoints,fermiLevel)
 for i = 1: tmp.nbands
     for j = 1: tmp.nktot
         bandplot.order(j) = calc_order(kpoints.pointNumber(1), tmp.nktot,j, tmp.scalingParameter, tmp.criticalPoint);
-        bandplot.energyUp{i}(j) = EIGENVAL.energyUp( (tmp.nbands + 2) * j + i - (tmp.nbands - 1) ) - DOSCAR(1, 4);
-        bandplot.energyDown{i}(j) = EIGENVAL.energyDown( (tmp.nbands + 2) * j + i - (tmp.nbands - 1) ) - DOSCAR(1, 4);
+        bandplot.energyUp{i}(j) = EIGENVAL.energyUp( (tmp.nbands + 2) * j + i - (tmp.nbands - 1) ) - fermiLevel;
+        bandplot.energyDown{i}(j) = EIGENVAL.energyDown( (tmp.nbands + 2) * j + i - (tmp.nbands - 1) ) - fermiLevel;
         bandplot.eigenvalueUp{i}(j) = EIGENVAL.eigenvalueUp( (tmp.nbands + 2) * j + i - (tmp.nbands - 1) );
         bandplot.eigenvalueDown{i}(j) = EIGENVAL.eigenvalueDown( (tmp.nbands + 2) * j + i - (tmp.nbands - 1) );
         if mod(j, kpoints.pointNumber(1)) == 0 && j ~=  tmp.nktot
